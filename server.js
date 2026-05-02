@@ -89,7 +89,7 @@ server.backend = function(base_dir, socket_emitter, user_config) {
 
   (function() {
     var procfs = require('procfs-stats');
-    const { check } = require('diskusage');
+    const checkDiskSpace = require('check-disk-space').default;
 
     var HOST_DU_HEARTBEAT_DELAY_MS = 10000;  // statvfs might be heavy, every 10s should be reasonable
     var HOST_HEARTBEAT_DELAY_MS = 1000;
@@ -102,11 +102,11 @@ server.backend = function(base_dir, socket_emitter, user_config) {
     async function getFreeSpace(path) {
 
       try {
-        const info = await check(path);
-        self.front_end.emit('host_diskspace', { 
-          'availdisk': info.available,
-          'freedisk': info.free, 
-          'totaldisk': info.total
+        const info = await checkDiskSpace(path);
+        self.front_end.emit('host_diskspace', {
+          'availdisk': info.free,
+          'freedisk': info.free,
+          'totaldisk': info.size
         });
       } catch (err) {
         logging.error('Failure in server.js:getFreeSpace() ' + err);

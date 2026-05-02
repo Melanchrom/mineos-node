@@ -40,12 +40,16 @@ var config_file = argv.config_file;
 var localAuth = function (username, password) {
   var auth = require('./auth');
   return new Promise((resolve, reject) => {
-    auth.authenticate_shadow(username, password, function(authed_user) {
-      if (authed_user)
-        resolve({ username: authed_user });
-      else
-        reject(new Error('incorrect password'));
-    });
+    try {
+      auth.authenticate_shadow(username, password, function(authed_user) {
+        if (authed_user)
+          resolve({ username: authed_user });
+        else
+          reject(new Error('incorrect password'));
+      });
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 
@@ -79,7 +83,7 @@ passport.use('local-signin', new LocalStrategy(
         done(null, user);
       }
     })
-    .fail(function (err) {
+    .catch(function (err) {
       console.log('Unsuccessful login attempt for username:', username);
       var logstring = new Date().toString() + ' - failure from: ' + req.connection.remoteAddress + ' user: ' + username + '\n';
       try {
