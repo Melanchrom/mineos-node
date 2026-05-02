@@ -1,0 +1,5 @@
+allowBuilds:
+  diskusage: true
+  ejs: true
+  posix: true
+  userid: true

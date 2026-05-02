@@ -10,7 +10,6 @@ var express = require('express');
 var compression = require('compression');
 var passport = require('passport');
 var LocalStrategy = require('passport-local');
-var passportSocketIO = require("passport.socketio");
 var expressSession = require('express-session');
 var bodyParser = require('body-parser');
 var methodOverride = require('method-override');
@@ -33,18 +32,15 @@ var config_file = (opt.options || {}).config_file;
 
 // Authorization
 var localAuth = function (username, password) {
-  var Q = require('q');
   var auth = require('./auth');
-  var deferred = Q.defer();
-
-  auth.authenticate_shadow(username, password, function(authed_user) {
-    if (authed_user)
-        deferred.resolve({ username: authed_user });
-    else
-        deferred.reject(new Error('incorrect password'));
-  })
-
-  return deferred.promise;
+  return new Promise((resolve, reject) => {
+    auth.authenticate_shadow(username, password, function(authed_user) {
+      if (authed_user)
+        resolve({ username: authed_user });
+      else
+        reject(new Error('incorrect password'));
+    });
+  });
 }
 
 // Passport init
@@ -111,26 +107,26 @@ function ensureAuthenticated(req, res, next) {
 
 var token = require('crypto').randomBytes(48).toString('hex');
 
-app.use(bodyParser.urlencoded({extended: false}));
-app.use(methodOverride());
-app.use(compression());
-app.use(expressSession({ 
+var sessionMiddleware = expressSession({ 
   secret: token,
   key: 'express.sid',
   store: sessionStore,
   resave: false,
   saveUninitialized: false
-}));
+});
+
+app.use(bodyParser.urlencoded({extended: false}));
+app.use(methodOverride());
+app.use(compression());
+app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
 
 var io = require('socket.io')(http)
-io.use(passportSocketIO.authorize({
-  cookieParser: cookieParser,       // the same middleware you registrer in express
-  key:          'express.sid',       // the name of the cookie where express/connect stores its session_id
-  secret:       token,    // the session_secret to parse the cookie
-  store:        sessionStore        // we NEED to use a sessionstore. no memorystore please
-}));
+const wrap = middleware => (socket, next) => middleware(socket.request, {}, next);
+io.use(wrap(sessionMiddleware));
+io.use(wrap(passport.initialize()));
+io.use(wrap(passport.session()));
 
 function read_ini(filepath) {
   var ini = require('ini');

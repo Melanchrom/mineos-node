@@ -10,12 +10,18 @@ exports.profile = {
     json: true
   },
   handler: function (profile_dir, body, callback) {
-    var request = require('request');
+    var axios = require('axios');
     var p = [];
 
     var q = async.queue(function (obj, cb) {
       async.waterfall([
-        async.apply(request, obj.url),
+        function(inner_cb) {
+          axios.get(obj.url).then(response => {
+            inner_cb(null, {statusCode: response.status}, response.data);
+          }).catch(err => {
+            inner_cb(err);
+          });
+        },
         function (response, body, inner_cb) {
           inner_cb(response.statusCode != 200, body)
         },
