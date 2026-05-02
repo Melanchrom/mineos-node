@@ -4,7 +4,7 @@ var mineos = require('./mineos');
 var server = require('./server');
 var async = require('async');
 var fs = require('fs-extra');
-var getopt = require('node-getopt');
+var minimist = require('minimist');
 
 var express = require('express');
 var compression = require('compression');
@@ -21,14 +21,20 @@ var http = require('http').Server(app);
 
 var response_options = {root: __dirname};
 
-var opt = getopt.create([
-  ['c' , 'config_file=CONFIG_PATH'  , 'defaults to $PWD/custom.conf, then /etc/mineos.conf'],
-  ['h' , 'help'                     , 'display this help']
-])              // create Getopt instance
-.bindHelp()     // bind option 'help' to default action
-.parseSystem(); // parse command line
+var argv = minimist(process.argv.slice(2), {
+  string: ['config_file'],
+  alias: { c: 'config_file', h: 'help' }
+});
 
-var config_file = (opt.options || {}).config_file;
+if (argv.help) {
+  console.log('Usage: node webui.js [options]');
+  console.log('Options:');
+  console.log('  -c, --config_file CONFIG_PATH  defaults to $PWD/custom.conf, then /etc/mineos.conf');
+  console.log('  -h, --help                     display this help');
+  process.exit(0);
+}
+
+var config_file = argv.config_file;
 
 // Authorization
 var localAuth = function (username, password) {

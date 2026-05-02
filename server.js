@@ -7,9 +7,13 @@ var logging = require('winston');
 var fs = require('fs-extra');
 var server = exports;
 
-logging.add(logging.transports.File, {
-  filename: '/var/log/mineos.log',
-  handleExceptions: true
+logging.configure({
+  transports: [
+    new logging.transports.File({
+      filename: '/var/log/mineos.log',
+      handleExceptions: true
+    })
+  ]
 });
 
 server.backend = function(base_dir, socket_emitter, user_config) {
