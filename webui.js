@@ -1,10 +1,22 @@
 #!/usr/bin/env node
 
+var minimist = require('minimist');
+
+var argv = minimist(process.argv.slice(2), {
+  string: ['config_file'],
+  boolean: ['debug'],
+  alias: { c: 'config_file', h: 'help', d: 'debug' }
+});
+
+var debug = !!argv.debug;
+if (debug) {
+  process.env.MINEOS_DEBUG = '1';
+}
+
 var mineos = require('./mineos');
 var server = require('./server');
 var async = require('async');
 var fs = require('fs-extra');
-var minimist = require('minimist');
 
 var express = require('express');
 var compression = require('compression');
@@ -18,6 +30,11 @@ var cookieParser = require('cookie-parser');
 var sessionStore = new expressSession.MemoryStore();
 var app = express();
 var http = require('http').Server(app);
+
+function debugLog() {
+  if (!debug) return;
+  console.log.apply(console, arguments);
+}
 
 var response_options = {root: __dirname};
 
@@ -41,11 +58,12 @@ var localAuth = function (username, password) {
   var auth = require('./auth');
   return new Promise((resolve, reject) => {
     try {
-      auth.authenticate_shadow(username, password, function(authed_user) {
+      auth.authenticate_shadow(username, password, function(err, authed_user) {
+        if (err)
+          return reject(err);
         if (authed_user)
-          resolve({ username: authed_user });
-        else
-          reject(new Error('incorrect password'));
+          return resolve({ username: authed_user });
+        reject(new Error('invalid credentials'));
       });
     } catch (err) {
       reject(err);
@@ -84,8 +102,12 @@ passport.use('local-signin', new LocalStrategy(
       }
     })
     .catch(function (err) {
-      console.log('Unsuccessful login attempt for username:', username);
-      var logstring = new Date().toString() + ' - failure from: ' + req.connection.remoteAddress + ' user: ' + username + '\n';
+      var reason = (err && err.message) ? err.message : err;
+      console.log('Unsuccessful login attempt for username:', username, 'reason:', reason);
+      if (debug && err && err.stack)
+        console.log(err.stack);
+
+      var logstring = new Date().toString() + ' - failure from: ' + req.connection.remoteAddress + ' user: ' + username + ' reason: ' + reason + '\n';
       try {
         fs.appendFileSync('/var/log/mineos.auth.log', logstring);
       } catch (e) {
