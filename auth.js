@@ -47,13 +47,32 @@ auth.authenticate_shadow = function(user, plaintext, callback) {
         }
 
         var password_parts = shadow_info['password'].split(/\$/);
-        if (password_parts.length < 3) {
+        if (password_parts.length < 4) {
           debugLog('auth: shadow password format invalid for', user, 'parts:', password_parts.length);
           inner_callback(null, false);
           return;
         }
 
-        var salt = password_parts[2];
+        var hash_type = password_parts[1];
+        if (hash_type !== '6') {
+          debugLog('auth: shadow hash type', hash_type, 'not supported for', user, '(only sha512/$6 supported)');
+          inner_callback(null, false);
+          return;
+        }
+
+        var salt;
+        if (password_parts[2] && password_parts[2].startsWith('rounds=')) {
+          if (password_parts.length < 5) {
+            debugLog('auth: shadow password format invalid for', user, 'rounds present but no salt');
+            inner_callback(null, false);
+            return;
+          }
+          salt = password_parts[2] + '$' + password_parts[3];
+          debugLog('auth: shadow using rounds for', user);
+        } else {
+          salt = password_parts[2];
+        }
+
         var new_hash = hash.sha512crypt(plaintext, salt);
 
         var passed = (new_hash == shadow_info['password'] ? user : false);

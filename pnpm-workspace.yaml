@@ -1,4 +1,5 @@
 allowBuilds:
+  authenticate-pam: false
   ejs: true
   posix: true
   userid: true

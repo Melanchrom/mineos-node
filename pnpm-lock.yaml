@@ -29,6 +29,9 @@ importers:
       async:
         specifier: 1.5.2
         version: 1.5.2
+      authenticate-pam:
+        specifier: ^1.0.5
+        version: 1.0.5
       axios:
         specifier: ^0.24.0
         version: 0.24.0
@@ -278,6 +281,9 @@ packages:
 
   async@3.2.6:
     resolution: {integrity: sha512-htCUDlxyyCLMgaM3xXg0C0LW2xqfuQ6p05pCEIsXuyQ+a1koYKTuBMzRNwmybfLgvJDMd0r1LTn4+E0Ti6C2AA==}
+
+  authenticate-pam@1.0.5:
+    resolution: {integrity: sha512-zaPml3/19Sa3XLewuOoUNsxwnNz13mTNoO4Q09vr93cjTrH0dwXOU49Bcetk/XWl22bw9zO9WovSKkddGvBEsQ==}
 
   axios@0.24.0:
     resolution: {integrity: sha512-Q6cWsys88HoPgAaFAVUb0WpPk0O8iTeisR9IMqy9G8AbO4NlpVknrnQS03zzF9PGAWgO3cgletO3VjV/P7VztA==}
@@ -1653,6 +1659,10 @@ snapshots:
   async@1.5.2: {}
 
   async@3.2.6: {}
+
+  authenticate-pam@1.0.5:
+    dependencies:
+      nan: 2.26.2
 
   axios@0.24.0:
     dependencies:
