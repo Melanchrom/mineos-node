@@ -362,6 +362,14 @@ server.backend = function(base_dir, socket_emitter, user_config) {
     var fs = require('fs-extra');
 
     var ip_address = socket.request.connection.remoteAddress;
+    
+    // Check if user is authenticated
+    if (!socket.request.user) {
+      logging.warn('Unauthenticated socket connection attempt from {0}'.format(ip_address));
+      socket.disconnect();
+      return;
+    }
+    
     var username = socket.request.user.username;
 
     var OWNER_CREDS = {
