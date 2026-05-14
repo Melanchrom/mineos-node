@@ -430,6 +430,20 @@ server.backend = function(base_dir, socket_emitter, user_config) {
               async.series([
                 async.apply(fs.ensureDir, profile_dir),
                 function(cb) {
+                  // Run predownload hook if available
+                  if ('predownload' in SOURCES[args.profile['group']]) {
+                    SOURCES[args.profile['group']].predownload(profile_dir, args.profile, function(err) {
+                      if (err) {
+                        logging.error('[WEBUI] predownload hook failed for {0}: {1}'.format(args.profile['id'], err.message));
+                        return cb(err);
+                      }
+                      cb();
+                    });
+                  } else {
+                    cb();
+                  }
+                },
+                function(cb) {
                   var axios = require('axios');
                   axios({
                     url: args.profile.url,

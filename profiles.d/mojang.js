@@ -10,53 +10,7 @@ exports.profile = {
     json: true
   },
   handler: function (profile_dir, body, callback) {
-    var axios = require('axios');
     var p = [];
-
-    var q = async.queue(function (obj, cb) {
-      async.waterfall([
-        function (inner_cb) {
-          axios.get(obj.url).then(function (response) {
-            inner_cb(null, response.status, response.data);
-          }).catch(function (err) {
-            inner_cb(err);
-          });
-        },
-        function (statusCode, body, inner_cb) {
-          if (statusCode !== 200) {
-            return inner_cb(new Error('Unexpected status code: ' + statusCode));
-          }
-          inner_cb(null, body);
-        },
-        function (body, inner_cb) {
-          // axios already parses JSON responses; no need to call JSON.parse
-          var parsed = body;
-          for (var idx in p) {
-            if (p[idx]['id'] === obj['id']) {
-              try {
-                p[idx]['url'] = parsed['downloads']['server']['url'];
-              } catch (e) {
-                // Server jar not available for this version
-              }
-            }
-          }
-          inner_cb();
-        }
-      ], function (err) {
-        // cb() is called here, after the waterfall completes, not before
-        if (err) {
-          console.error('Error processing version ' + obj.id + ':', err.message);
-        }
-        cb();
-      });
-    }, 2);
-
-    q.pause();
-
-    // Set drain before resume to avoid missing the event if the queue empties instantly
-    q.drain = function () {
-      callback(null, p);
-    };
 
     try {
       for (var index in body.versions) {
@@ -72,18 +26,17 @@ exports.profile = {
         item['downloaded'] = fs.existsSync(path.join(profile_dir, item.id, item.filename));
         item['version'] = ref_obj['id'];
         item['release_version'] = ref_obj['id'];
+        item['meta_url'] = ref_obj.url; // Store the metadata URL for lazy loading
 
         switch (ref_obj['type']) {
           case 'release':
             item['type'] = ref_obj['type'];
-            item['url'] = null; // Will be populated by the queue
-            q.push({ id: item['id'], url: ref_obj.url });
+            item['url'] = null; // Will be populated on-demand when download is requested
             p.push(item);
             break;
           case 'snapshot':
             item['type'] = ref_obj['type'];
-            item['url'] = null; // Will be populated by the queue
-            q.push({ id: item['id'], url: ref_obj.url });
+            item['url'] = null; // Will be populated on-demand when download is requested
             p.push(item);
             break;
           default:
@@ -97,12 +50,55 @@ exports.profile = {
       return callback(e);
     }
 
-    // If nothing was queued (e.g. only old_version entries), drain will never fire
-    if (q.length() === 0 && q.running() === 0) {
-      return callback(null, p);
-    }
+    callback(null, p);
+  },
 
-    q.resume();
+  predownload: function (profile_dir, profile, callback) {
+    var axios = require('axios');
+
+    var q = async.queue(function (obj, cb) {
+      async.waterfall([
+        function (inner_cb) {
+          axios.get(obj.meta_url).then(function (response) {
+            inner_cb(null, response.status, response.data);
+          }).catch(function (err) {
+            inner_cb(err);
+          });
+        },
+        function (statusCode, body, inner_cb) {
+          if (statusCode !== 200) {
+            return inner_cb(new Error('Unexpected status code: ' + statusCode));
+          }
+          inner_cb(null, body);
+        },
+        function (body, inner_cb) {
+          // axios already parses JSON responses; no need to call JSON.parse
+          try {
+            profile['url'] = body['downloads']['server']['url'];
+          } catch (e) {
+            // Server jar not available for this version
+            return inner_cb(new Error('Server jar not available for version ' + obj.id));
+          }
+          inner_cb();
+        }
+      ], function (err) {
+        if (err) {
+          console.error('Error processing version ' + obj.id + ':', err.message);
+        }
+        cb(err);
+      });
+    }, 1);
+
+    q.drain = function () {
+      callback();
+    };
+
+    q.push({ id: profile.id, meta_url: profile.meta_url });
+    
+    // If queue doesn't start, call drain manually
+    if (q.length() === 0 && q.running() === 0) {
+      callback();
+    }
   },
 
   postdownload: function (profile_dir, dest_filepath, callback) {
