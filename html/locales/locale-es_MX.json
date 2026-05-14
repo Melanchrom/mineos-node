@@ -63,6 +63,7 @@
   "CURRENTLY_USING_PROFILE": "Perfil Usado Actualmente:",
   "PROFILE": "Perfil",
   "PROFILE_DESC": "Descripcion del Perfil",
+  "FABRIC_LOADER": "Fabric Loader Version",
   "DOWNLOADED": "Descargado",
 
   "SPIGOT_CRAFTBUKKIT": "Spigot",
