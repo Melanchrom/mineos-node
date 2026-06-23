@@ -128,6 +128,21 @@ app.filter('profile_filter', function() {
   }
 })
 
+app.filter('fabric_loader_filter', function() {
+  return function(profiles, params) {
+    // Only filter if fabric is selected and loader version is specified
+    if (!params || params.group !== 'fabric' || !params.loader || params.loader === 'all')
+      return profiles;
+    
+    var keep = [];
+    for (var index in profiles)
+      if (profiles[index].loader_version === params.loader)
+        keep.push(profiles[index]);
+    
+    return keep;
+  }
+})
+
 app.filter('profile_downloaded', function() {
   return function(profiles, criteria) {
     var keep = [];
@@ -298,7 +313,18 @@ app.controller("Webui", ['$scope', 'socket', 'ServerService', '$filter', '$trans
   $scope.serverprofiles = {
     group: 'mojang',
     type: 'release',
-    downloaded: 'all'
+    downloaded: 'all',
+    fabric_loader: 'all'
+  }
+
+  $scope.unique_fabric_loaders = function() {
+    var loaders = ['all'];
+    if($scope.profiles && $scope.serverprofiles.group === 'fabric')
+      $.each($scope.profiles, function(idx, data) {
+        if (data.group === 'fabric' && loaders.indexOf(data.loader_version) < 0)
+          loaders.push(data.loader_version);
+      })
+    return loaders.sort().reverse();
   }
 
   /* watches */
@@ -364,6 +390,10 @@ app.controller("Webui", ['$scope', 'socket', 'ServerService', '$filter', '$trans
           groups.push(data.group)
       })
     return groups;
+  }
+
+  $scope.show_fabric_loader_selector = function() {
+    return $scope.serverprofiles.group === 'fabric';
   }
 
   $scope.extra_action = function(action) {

@@ -1,16 +1,27 @@
 #!/usr/bin/env node
 
+var minimist = require('minimist');
+
+var argv = minimist(process.argv.slice(2), {
+  string: ['config_file'],
+  boolean: ['debug'],
+  alias: { c: 'config_file', h: 'help', d: 'debug' }
+});
+
+var debug = !!argv.debug;
+if (debug) {
+  process.env.MINEOS_DEBUG = '1';
+}
+
 var mineos = require('./mineos');
 var server = require('./server');
 var async = require('async');
 var fs = require('fs-extra');
-var getopt = require('node-getopt');
 
 var express = require('express');
 var compression = require('compression');
 var passport = require('passport');
 var LocalStrategy = require('passport-local');
-var passportSocketIO = require("passport.socketio");
 var expressSession = require('express-session');
 var bodyParser = require('body-parser');
 var methodOverride = require('method-override');
@@ -20,31 +31,44 @@ var sessionStore = new expressSession.MemoryStore();
 var app = express();
 var http = require('http').Server(app);
 
+function debugLog() {
+  if (!debug) return;
+  console.log.apply(console, arguments);
+}
+
 var response_options = {root: __dirname};
 
-var opt = getopt.create([
-  ['c' , 'config_file=CONFIG_PATH'  , 'defaults to $PWD/custom.conf, then /etc/mineos.conf'],
-  ['h' , 'help'                     , 'display this help']
-])              // create Getopt instance
-.bindHelp()     // bind option 'help' to default action
-.parseSystem(); // parse command line
+var argv = minimist(process.argv.slice(2), {
+  string: ['config_file'],
+  alias: { c: 'config_file', h: 'help' }
+});
 
-var config_file = (opt.options || {}).config_file;
+if (argv.help) {
+  console.log('Usage: node webui.js [options]');
+  console.log('Options:');
+  console.log('  -c, --config_file CONFIG_PATH  defaults to $PWD/custom.conf, then /etc/mineos.conf');
+  console.log('  -h, --help                     display this help');
+  process.exit(0);
+}
+
+var config_file = argv.config_file;
 
 // Authorization
 var localAuth = function (username, password) {
-  var Q = require('q');
   var auth = require('./auth');
-  var deferred = Q.defer();
-
-  auth.authenticate_shadow(username, password, function(authed_user) {
-    if (authed_user)
-        deferred.resolve({ username: authed_user });
-    else
-        deferred.reject(new Error('incorrect password'));
-  })
-
-  return deferred.promise;
+  return new Promise((resolve, reject) => {
+    try {
+      auth.authenticate_shadow(username, password, function(err, authed_user) {
+        if (err)
+          return reject(err);
+        if (authed_user)
+          return resolve({ username: authed_user });
+        reject(new Error('invalid credentials'));
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
 }
 
 // Passport init
@@ -77,9 +101,13 @@ passport.use('local-signin', new LocalStrategy(
         done(null, user);
       }
     })
-    .fail(function (err) {
-      console.log('Unsuccessful login attempt for username:', username);
-      var logstring = new Date().toString() + ' - failure from: ' + req.connection.remoteAddress + ' user: ' + username + '\n';
+    .catch(function (err) {
+      var reason = (err && err.message) ? err.message : err;
+      console.log('Unsuccessful login attempt for username:', username, 'reason:', reason);
+      if (debug && err && err.stack)
+        console.log(err.stack);
+
+      var logstring = new Date().toString() + ' - failure from: ' + req.connection.remoteAddress + ' user: ' + username + ' reason: ' + reason + '\n';
       try {
         fs.appendFileSync('/var/log/mineos.auth.log', logstring);
       } catch (e) {
@@ -111,26 +139,26 @@ function ensureAuthenticated(req, res, next) {
 
 var token = require('crypto').randomBytes(48).toString('hex');
 
-app.use(bodyParser.urlencoded({extended: false}));
-app.use(methodOverride());
-app.use(compression());
-app.use(expressSession({ 
+var sessionMiddleware = expressSession({ 
   secret: token,
   key: 'express.sid',
   store: sessionStore,
   resave: false,
   saveUninitialized: false
-}));
+});
+
+app.use(bodyParser.urlencoded({extended: false}));
+app.use(methodOverride());
+app.use(compression());
+app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
 
 var io = require('socket.io')(http)
-io.use(passportSocketIO.authorize({
-  cookieParser: cookieParser,       // the same middleware you registrer in express
-  key:          'express.sid',       // the name of the cookie where express/connect stores its session_id
-  secret:       token,    // the session_secret to parse the cookie
-  store:        sessionStore        // we NEED to use a sessionstore. no memorystore please
-}));
+const wrap = middleware => (socket, next) => middleware(socket.request, {}, next);
+io.use(wrap(sessionMiddleware));
+io.use(wrap(passport.initialize()));
+io.use(wrap(passport.session()));
 
 function read_ini(filepath) {
   var ini = require('ini');

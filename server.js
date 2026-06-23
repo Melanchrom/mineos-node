@@ -7,10 +7,22 @@ var logging = require('winston');
 var fs = require('fs-extra');
 var server = exports;
 
-logging.add(logging.transports.File, {
-  filename: '/var/log/mineos.log',
-  handleExceptions: true
-});
+var transports = [
+  new logging.transports.File({
+    filename: '/var/log/mineos.log',
+    handleExceptions: true,
+    level: process.env.MINEOS_DEBUG ? 'debug' : 'info'
+  })
+];
+if (process.env.MINEOS_DEBUG) {
+  transports.push(new logging.transports.Console({
+    level: 'debug',
+    handleExceptions: true,
+    colorize: true
+  }));
+}
+
+logging.configure({ transports: transports });
 
 server.backend = function(base_dir, socket_emitter, user_config) {
   var self = this;
@@ -85,7 +97,7 @@ server.backend = function(base_dir, socket_emitter, user_config) {
 
   (function() {
     var procfs = require('procfs-stats');
-    const { check } = require('diskusage');
+    const checkDiskSpace = require('check-disk-space').default;
 
     var HOST_DU_HEARTBEAT_DELAY_MS = 10000;  // statvfs might be heavy, every 10s should be reasonable
     var HOST_HEARTBEAT_DELAY_MS = 1000;
@@ -98,11 +110,11 @@ server.backend = function(base_dir, socket_emitter, user_config) {
     async function getFreeSpace(path) {
 
       try {
-        const info = await check(path);
-        self.front_end.emit('host_diskspace', { 
-          'availdisk': info.available,
-          'freedisk': info.free, 
-          'totaldisk': info.total
+        const info = await checkDiskSpace(path);
+        self.front_end.emit('host_diskspace', {
+          'availdisk': info.free,
+          'freedisk': info.free,
+          'totaldisk': info.size
         });
       } catch (err) {
         logging.error('Failure in server.js:getFreeSpace() ' + err);
@@ -239,7 +251,7 @@ server.backend = function(base_dir, socket_emitter, user_config) {
     if (send_existing && self.profiles.length) //if requesting to just send what you already have AND they are already present
       self.front_end.emit('profile_list', self.profiles);
     else {
-      var request = require('request');
+      var axios = require('axios');
       var profile_dir = path.join(base_dir, mineos.DIRS['profiles']);
       var SIMULTANEOUS_DOWNLOADS = 3;
       var SOURCES = [];
@@ -259,7 +271,13 @@ server.backend = function(base_dir, socket_emitter, user_config) {
         function(collection, key, outer_cb) {
           if ('request_args' in collection) {
             async.waterfall([
-              async.apply(request, collection.request_args),
+              function(cb) {
+                axios(collection.request_args).then(response => {
+                  cb(null, {statusCode: response.status}, response.data);
+                }).catch(err => {
+                  cb(err);
+                });
+              },
               function(response, body, cb) {
                 cb(response.statusCode != 200, body)
               },
@@ -344,6 +362,14 @@ server.backend = function(base_dir, socket_emitter, user_config) {
     var fs = require('fs-extra');
 
     var ip_address = socket.request.connection.remoteAddress;
+    
+    // Check if user is authenticated
+    if (!socket.request.user) {
+      logging.warn('Unauthenticated socket connection attempt from {0}'.format(ip_address));
+      socket.disconnect();
+      return;
+    }
+    
     var username = socket.request.user.username;
 
     var OWNER_CREDS = {
@@ -404,26 +430,60 @@ server.backend = function(base_dir, socket_emitter, user_config) {
               async.series([
                 async.apply(fs.ensureDir, profile_dir),
                 function(cb) {
-                  var progress = require('request-progress');
-                  var request = require('request');
-                  progress(request({url: args.profile.url, headers: {'User-Agent': 'MineOS-node'}}), { throttle: 250, delay: 100 })
-                    .on('error', function(err) {
-                      logging.error(err);
-                    })
-                    .on('progress', function(state) {
-                      args.profile.progress = state;
-                      self.front_end.emit('file_progress', args.profile);
-                    })
-                    .on('complete', function(response) {
-                      if (response.statusCode == 200) {
-                        logging.info('[WEBUI] Successfully downloaded {0} to {1}'.format(args.profile.url, dest_filepath));
-                      } else {
-                        logging.error('[WEBUI] Server was unable to download file:', args.profile.url);
-                        logging.error('[WEBUI] Remote server returned status {0} with headers:'.format(response.statusCode), response.headers);
+                  // Run predownload hook if available
+                  if ('predownload' in SOURCES[args.profile['group']]) {
+                    SOURCES[args.profile['group']].predownload(profile_dir, args.profile, function(err) {
+                      if (err) {
+                        logging.error('[WEBUI] predownload hook failed for {0}: {1}'.format(args.profile['id'], err.message));
+                        return cb(err);
                       }
-                      cb(response.statusCode != 200);
-                    })
-                    .pipe(fs.createWriteStream(dest_filepath))
+                      cb();
+                    });
+                  } else {
+                    cb();
+                  }
+                },
+                function(cb) {
+                  var axios = require('axios');
+                  axios({
+                    url: args.profile.url,
+                    headers: {'User-Agent': 'MineOS-node'},
+                    responseType: 'stream',
+                    onDownloadProgress: (progressEvent) => {
+                      args.profile.progress = {
+                        percent: progressEvent.loaded / progressEvent.total,
+                        speed: progressEvent.rate,
+                        size: {
+                          total: progressEvent.total,
+                          transferred: progressEvent.loaded
+                        },
+                        time: {
+                          elapsed: progressEvent.estimated,
+                          remaining: progressEvent.estimated
+                        }
+                      };
+                      self.front_end.emit('file_progress', args.profile);
+                    }
+                  }).then(response => {
+                    if (response.status == 200) {
+                      response.data.pipe(fs.createWriteStream(dest_filepath))
+                        .on('finish', () => {
+                          logging.info('[WEBUI] Successfully downloaded {0} to {1}'.format(args.profile.url, dest_filepath));
+                          cb();
+                        })
+                        .on('error', (err) => {
+                          logging.error(err);
+                          cb(err);
+                        });
+                    } else {
+                      logging.error('[WEBUI] Server was unable to download file:', args.profile.url);
+                      logging.error('[WEBUI] Remote server returned status {0} with headers:'.format(response.status), response.headers);
+                      cb(new Error('Download failed'));
+                    }
+                  }).catch(err => {
+                    logging.error(err);
+                    cb(err);
+                  });
                 },
                 function(cb) {
                   switch(path.extname(args.profile.filename).toLowerCase()) {
@@ -1220,7 +1280,7 @@ function server_container(server_name, user_config, socket_io) {
 
     function produce_receipt(args) {
       /* when a command is received, immediately respond to client it has been received */
-      var uuid = require('node-uuid');
+      var uuid = require('uuid');
       logging.info('[{0}] {1} issued command : "{2}"'.format(server_name, ip_address, args.command))
       args.uuid = uuid.v1();
       args.time_initiated = Date.now();
@@ -1355,7 +1415,7 @@ function server_container(server_name, user_config, socket_io) {
     }
 
     function manage_cron(opts) {
-      var uuid = require('node-uuid');
+      var uuid = require('uuid');
       var hash = require('object-hash');
       var CronJob = require('cron').CronJob;
 

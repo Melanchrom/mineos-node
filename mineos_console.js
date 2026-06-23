@@ -1,17 +1,24 @@
 #!/usr/bin/env node
 
-var getopt = require('node-getopt');
+var minimist = require('minimist');
 var mineos = require('./mineos');
 
-var opt = getopt.create([
-  ['s' , 'server_name=SERVER_NAME'  , 'server name'],
-  ['d' , 'base_dir=BASE_DIR'        , 'defaults to /var/games/minecraft'],
-  ['D' , 'debug'                    , 'show debug output'],
-  ['V' , 'version'                  , 'show version'],
-  ['h' , 'help'                     , 'display this help']
-])              // create Getopt instance
-.bindHelp()     // bind option 'help' to default action
-.parseSystem(); // parse command line
+var argv = minimist(process.argv.slice(2), {
+  string: ['server_name', 'base_dir'],
+  boolean: ['debug', 'version', 'help'],
+  alias: { s: 'server_name', d: 'base_dir', D: 'debug', V: 'version', h: 'help' }
+});
+
+if (argv.help) {
+  console.log('Usage: node mineos_console.js [options]');
+  console.log('Options:');
+  console.log('  -s, --server_name SERVER_NAME  server name');
+  console.log('  -d, --base_dir BASE_DIR        defaults to /var/games/minecraft');
+  console.log('  -D, --debug                    show debug output');
+  console.log('  -V, --version                  show version');
+  console.log('  -h, --help                     display this help');
+  process.exit(0);
+}
 
 function return_git_commit_hash(callback) {
   var child_process = require('child_process');
@@ -115,16 +122,17 @@ function retrieve_property(args, callback) {
   fn.apply(instance, arg_array);
 }
 
-var base_dir = (opt.options || {}).base_dir || '/var/games/minecraft';
+var base_dir = argv.base_dir || '/var/games/minecraft';
 
-if ('version' in opt.options) {
+
+if (argv.version) {
   return_git_commit_hash(function(code, hash) {
     if (!code)
       console.log(hash);
     process.exit(code);
   })
 } else {
-  var instance = new mineos.mc(opt.options.server_name, base_dir);
+  var instance = new mineos.mc(argv.server_name, base_dir);
   if (opt.argv[0] in instance) { //first provided param matches a function name) {
     handle_server(opt, function(code, retval) {
       for (var idx in retval)

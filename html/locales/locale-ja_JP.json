@@ -63,6 +63,7 @@
   "CURRENTLY_USING_PROFILE": "現在使用中のプロファイル:",
   "PROFILE": "プロファイル",
   "PROFILE_DESC": "プロファイルの説明",
+  "FABRIC_LOADER": "Fabric Loader Version",
   "DOWNLOADED": "ダウンロード済み",
 
   "SPIGOT_CRAFTBUKKIT": "Spigot / Craftbukkit",

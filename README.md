@@ -12,15 +12,15 @@ This has been tested on Debian, Ubuntu, ArchLinux, and FreeBSD and should work o
 Installation
 ------------
 
-MineOS is distributed through github and downloads its dependencies with npm.
+MineOS is distributed through github and downloads its dependencies with pnpm.
 
-MineOS requires root-privileges, as the authentication relies on the underlying system's /etc/shadow.
+MineOS requires root-privileges, as the authentication relies on the underlying system's authentication mechanisms (/etc/shadow or PAM).
 
 Do not install this atop an existing MineOS system (using the Python-based webui), since the installation location is the same /usr/games/minecraft. Following are steps for installing MineOS on an apt-get based distribution, such as Debian or Ubuntu.  These instructions are detailed further (as well as for additional distributions) on the [MineOS wiki](https://minecraft.codeemo.com/mineoswiki/index.php?title=Installing_MineOS).
 
 Using an apt-get based Linux distribution:
 
-    curl -sL https://deb.nodesource.com/setup_8.x | bash -
+    curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
     apt-get update
     apt-get install -y nodejs git rdiff-backup screen build-essential openjdk-8-jre-headless
     mkdir -p /usr/games
@@ -30,7 +30,8 @@ Using an apt-get based Linux distribution:
     chmod +x generate-sslcert.sh
     ./generate-sslcert.sh
     cp mineos.conf /etc/mineos.conf
-    npm install
+    npm install -g pnpm
+    pnpm install
     
 For hosts using 'upstart':
 
@@ -103,12 +104,13 @@ The Angular.JS-based web user interface capable of:
 * delete previous archives and restore poitns to free up space
 * restore server from previous restore point
 * see filesystem usage of live server files, archives, and restore points
-* authentication via shadow passwords (/etc/shadow) of underlying Linux system
+* authentication via system mechanisms (shadow passwords or PAM) 
 * logs all user actions to file
 * cronjobs saved to portable format cron.config
 * server can be daemonized to background
 * upstart/supervisord restart process on unhandled exceptions
 * easy selection of server packs from FTB or Mojang official jars
+* Fabric server support
 * PHAR support for Pocketmine servers
 * Support for BungeeCord servers
 * command-line interface for scripting
